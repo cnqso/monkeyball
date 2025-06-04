@@ -58,10 +58,10 @@
 	0%, 100% {
 		opacity: 1;
 		background-color: rgb(220 252 231);
-		color: rgb(48, 173, 96);
+		color: rgb(22 101 52);
 	}
 	50% {
-		opacity: 0.6;
+		opacity: 0.3;
 		background-color: rgb(187 247 208);
 		color: rgb(20 83 45);
 	}
