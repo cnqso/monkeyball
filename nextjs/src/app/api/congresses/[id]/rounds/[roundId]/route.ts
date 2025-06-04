@@ -17,11 +17,12 @@ interface UpdateRoundRequest {
 
 export async function PUT(
   request: Request,
-  { params }: { params: { id: string; roundId: string } }
+  { params }: { params: Promise<{ id: string; roundId: string }> }
 ) {
   try {
     const { players }: UpdateRoundRequest = await request.json();
-    const roundId = parseInt(params.roundId);
+    const resolvedParams = await params;
+    const roundId = parseInt(resolvedParams.roundId);
     const conn = await getDBConnection();
 
     try {

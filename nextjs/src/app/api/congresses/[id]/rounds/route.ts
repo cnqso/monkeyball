@@ -37,9 +37,9 @@ interface OrderRow extends RowDataPacket {
 
 export async function GET(
   request: Request,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
-  const { id: congressId } = await Promise.resolve(context.params);
+  const { id: congressId } = await context.params;
   
   try {
     const conn = await getDBConnection();
@@ -102,11 +102,12 @@ export async function GET(
 
 export async function POST(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { difficulty, players }: NewRound = await request.json();
-    const congressId = parseInt(params.id);
+    const resolvedParams = await params;
+    const congressId = parseInt(resolvedParams.id);
     const conn = await getDBConnection();
 
     try {
