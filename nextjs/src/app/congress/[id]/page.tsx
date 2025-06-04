@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useEffect} from 'react';
-import { useRouter } from 'next/navigation';
-import { Congress, Difficulty, Round } from '@/types/congress';
+import { Congress, Round } from '@/types/congress';
 import { Player, MONKEY_NAMES, MonkeyType } from '@/types/player';
 import PlayerDisplay from '@/components/PlayerDisplay';
 import AddRoundForm from '@/components/AddRoundForm';

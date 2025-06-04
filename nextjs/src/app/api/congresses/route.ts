@@ -56,12 +56,12 @@ export async function POST(request: Request) {
       await conn.beginTransaction();
 
       // Insert congress
-      const [result] = await conn.execute(
+      const [result] = await conn.execute<CongressRow[]>(
         'INSERT INTO congresses (name, date, location, notes) VALUES (?, ?, ?, ?)',
         [congress.name, congress.date, congress.location || null, congress.notes || null]
       );
 
-      const congressId = (result as any).insertId;
+      const congressId = result[0].congress_id;
 
       // Insert player associations
       const playerValues = congress.player_tags.map(tag => [congressId, tag]);

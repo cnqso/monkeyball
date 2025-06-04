@@ -2,6 +2,7 @@ import { getDBConnection } from "@/lib/db";
 import { NextResponse } from "next/server";
 import { Difficulty } from "@/types/congress";
 import { MonkeyType } from "@/types/player";
+import { RowDataPacket, ResultSetHeader } from "mysql2";
 
 interface RoundPlayer {
   player_tag: string;
@@ -17,6 +18,23 @@ interface NewRound {
   players: RoundPlayer[];
 }
 
+interface RoundRow extends RowDataPacket {
+  round_id: number;
+  difficulty: Difficulty;
+  round_order: number;
+  player_tag: string | null;
+  stage_reached: number;
+  lives_lost: number;
+  extra_stages: number;
+  monkey_used: MonkeyType;
+  tiebreaker_points: number | null;
+  final_rank: number | null;
+}
+
+interface OrderRow extends RowDataPacket {
+  next_order: number;
+}
+
 export async function GET(
   request: Request,
   context: { params: { id: string } }
@@ -27,7 +45,7 @@ export async function GET(
     const conn = await getDBConnection();
     
     // Get all rounds with their player scores
-    const [rounds] = await conn.execute(`
+    const [rounds] = await conn.execute<RoundRow[]>(`
       SELECT 
         r.round_id,
         r.difficulty,
@@ -49,7 +67,7 @@ export async function GET(
 
     // Group player scores by round
     const roundsMap = new Map();
-    (rounds as any[]).forEach(row => {
+    rounds.forEach(row => {
       if (!roundsMap.has(row.round_id)) {
         roundsMap.set(row.round_id, {
           round_id: row.round_id,
@@ -93,18 +111,18 @@ export async function POST(
 
     try {
       // Get next round order
-      const [orderResult] = await conn.execute(
+      const [orderResult] = await conn.execute<OrderRow[]>(
         'SELECT COALESCE(MAX(round_order), 0) + 1 as next_order FROM rounds WHERE congress_id = ?',
         [congressId]
-      ) as any[];
+      );
       
       const nextOrder = orderResult[0]?.next_order || 1;
 
       // Insert round
-      const [roundResult] = await conn.execute(
+      const [roundResult] = await conn.execute<ResultSetHeader>(
         'INSERT INTO rounds (congress_id, round_order, difficulty) VALUES (?, ?, ?)',
         [congressId, nextOrder, difficulty]
-      ) as any[];
+      );
 
       const roundId = roundResult.insertId;
 
