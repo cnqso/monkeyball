@@ -5,10 +5,12 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Player } from '@/types/player';
 import PlayerDisplay from '@/components/PlayerDisplay';
+import LoadingSpinner from '@/components/LoadingSpinner';
 
 export default function NewCongress() {
   const router = useRouter();
   const [players, setPlayers] = useState<Player[]>([]);
+  const [loading, setLoading] = useState(true);
   const [formData, setFormData] = useState({
     name: '',
     date: new Date().toISOString().split('T')[0],
@@ -30,6 +32,8 @@ export default function NewCongress() {
       } catch (err) {
         setError('Failed to load players');
         console.error(err);
+      } finally {
+        setLoading(false);
       }
     };
 
@@ -72,6 +76,15 @@ export default function NewCongress() {
         : [...prev.player_tags, player_tag]
     }));
   };
+
+  if (loading) {
+    return (
+      <div className="container mx-auto p-4 max-w-2xl">
+        <h1 className="text-3xl font-bold mb-6">Create New Congress</h1>
+        <LoadingSpinner size="lg" className="py-8" />
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto p-4 max-w-2xl">

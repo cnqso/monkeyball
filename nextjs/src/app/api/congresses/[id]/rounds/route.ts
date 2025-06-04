@@ -65,7 +65,7 @@ export async function GET(
           stage_reached: row.stage_reached,
           lives_lost: row.lives_lost,
           extra_stages: row.extra_stages,
-          monkey_used: row.monkey_used as MonkeyType,
+          monkey_used: row.monkey_used,
           tiebreaker_points: row.tiebreaker_points,
           final_rank: row.final_rank
         });
@@ -84,89 +84,90 @@ export async function GET(
 
 export async function POST(
   request: Request,
-  context: { params: { id: string } }
+  { params }: { params: { id: string } }
 ) {
-  const { id: congressId } = await Promise.resolve(context.params);
-  
   try {
-    const round: NewRound = await request.json();
+    const { difficulty, players }: NewRound = await request.json();
+    const congressId = parseInt(params.id);
     const conn = await getDBConnection();
 
     try {
-      // Start transaction
-      await conn.beginTransaction();
-
-      // Get the current round count for this congress
-      const [roundCountResult] = await conn.execute(
-        'SELECT COUNT(*) as count FROM rounds WHERE congress_id = ?',
+      // Get next round order
+      const [orderResult] = await conn.execute(
+        'SELECT COALESCE(MAX(round_order), 0) + 1 as next_order FROM rounds WHERE congress_id = ?',
         [congressId]
-      );
-      const roundOrder = (roundCountResult as any)[0].count + 1;
+      ) as any[];
+      
+      const nextOrder = orderResult[0]?.next_order || 1;
 
-      // Insert the round
+      // Insert round
       const [roundResult] = await conn.execute(
-        'INSERT INTO rounds (congress_id, difficulty, round_order) VALUES (?, ?, ?)',
-        [congressId, round.difficulty, roundOrder]
-      );
-      const roundId = (roundResult as any).insertId;
+        'INSERT INTO rounds (congress_id, round_order, difficulty) VALUES (?, ?, ?)',
+        [congressId, nextOrder, difficulty]
+      ) as any[];
 
-      // Calculate rankings based on stage_reached, extra_stages, and lives_lost
-      const sortedPlayers = [...round.players].sort((a, b) => {
-        // First compare stages reached
+      const roundId = roundResult.insertId;
+
+      // Calculate rankings for all players
+      const sortedPlayers = [...players].sort((a, b) => {
+        // Stage reached (higher is better)
         if (a.stage_reached !== b.stage_reached) {
           return b.stage_reached - a.stage_reached;
         }
-        // Then compare extra stages
+        
+        // Extra stages (higher is better)
         if (a.extra_stages !== b.extra_stages) {
           return b.extra_stages - a.extra_stages;
         }
-        // Then compare lives lost (fewer is better)
+        
+        // Lives lost (lower is better)
         if (a.lives_lost !== b.lives_lost) {
           return a.lives_lost - b.lives_lost;
         }
-        // Finally, compare tiebreaker points if available
-        if (a.tiebreaker_points !== null && b.tiebreaker_points !== null) {
-          return b.tiebreaker_points - a.tiebreaker_points;
-        }
-        return 0;
+        
+        // Tiebreaker points (higher is better, null counts as 0)
+        const aTiebreaker = a.tiebreaker_points ?? 0;
+        const bTiebreaker = b.tiebreaker_points ?? 0;
+        return bTiebreaker - aTiebreaker;
       });
 
-      // Insert player scores with calculated ranks
-      const playerValues = sortedPlayers.map((player, index) => [
-        roundId,
-        player.player_tag,
-        player.stage_reached,
-        player.lives_lost,
-        player.extra_stages,
-        player.monkey_used,
-        player.tiebreaker_points,
-        index + 1 // rank
-      ]);
+      // Check if this is an unfinished round (all players have 0 stage_reached)
+      const isUnfinished = players.every(p => p.stage_reached === 0);
 
-      await conn.query(
-        `INSERT INTO round_players 
-         (round_id, player_tag, stage_reached, lives_lost, extra_stages, 
-          monkey_used, tiebreaker_points, final_rank) 
-         VALUES ?`,
-        [playerValues]
-      );
-
-      // Commit transaction
-      await conn.commit();
+      // Insert player scores
+      for (let i = 0; i < sortedPlayers.length; i++) {
+        const player = sortedPlayers[i];
+        // For unfinished rounds, set final_rank to null
+        const finalRank = isUnfinished ? null : i + 1;
+        
+        await conn.execute(
+          `INSERT INTO round_players 
+           (round_id, player_tag, monkey_used, stage_reached, lives_lost, extra_stages, tiebreaker_points, final_rank) 
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            roundId,
+            player.player_tag,
+            player.monkey_used,
+            player.stage_reached,
+            player.lives_lost,
+            player.extra_stages,
+            player.tiebreaker_points,
+            finalRank
+          ]
+        );
+      }
 
       return NextResponse.json({ 
-        round_id: roundId,
-        message: 'Round created successfully' 
-      }, { status: 201 });
-    } catch (error) {
-      // Rollback on error
-      await conn.rollback();
-      throw error;
+        success: true, 
+        roundId,
+        roundOrder: nextOrder,
+        isUnfinished 
+      });
     } finally {
       await conn.end();
     }
   } catch (error) {
-    console.error('Failed to create round:', error);
+    console.error('Error creating round:', error);
     return NextResponse.json(
       { error: 'Failed to create round' },
       { status: 500 }

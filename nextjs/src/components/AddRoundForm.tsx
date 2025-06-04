@@ -1,15 +1,25 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Player, MonkeyType, MONKEY_NAMES } from '@/types/player';
 import { Difficulty } from '@/types/congress';
 import PlayerDisplay from './PlayerDisplay';
+import LoadingSpinner from './LoadingSpinner';
 
 interface AddRoundFormProps {
   congressId: number;
   players: Player[];
   onClose: () => void;
   onSuccess: () => void;
+  editRound?: {
+    round_id: number;
+    difficulty: Difficulty;
+    round_order: number;
+    players: Array<{
+      player_tag: string;
+      monkey_used: MonkeyType;
+    }>;
+  };
 }
 
 interface PlayerScore {
@@ -34,13 +44,17 @@ const STAGE_COUNTS = {
   [Difficulty.Master]: { main: 10, extra: 10 }
 };
 
-export default function AddRoundForm({ congressId, players, onClose, onSuccess }: AddRoundFormProps) {
+export default function AddRoundForm({ congressId, players, onClose, onSuccess, editRound }: AddRoundFormProps) {
   // Step management
-  const [currentStep, setCurrentStep] = useState<'select-players' | 'configure-round'>('select-players');
+  const [currentStep, setCurrentStep] = useState<'select-players' | 'configure-round'>(
+    editRound ? 'configure-round' : 'select-players'
+  );
   const [selectedPlayers, setSelectedPlayers] = useState<Player[]>([]);
   
   // Round configuration state
-  const [difficulty, setDifficulty] = useState<Difficulty>(Difficulty.Beginner);
+  const [difficulty, setDifficulty] = useState<Difficulty>(
+    editRound?.difficulty || Difficulty.Beginner
+  );
   const [isSmb1, setIsSmb1] = useState(false);
   const [showDistributor, setShowDistributor] = useState(false);
   const [isDistributing, setIsDistributing] = useState(false);
@@ -50,6 +64,31 @@ export default function AddRoundForm({ congressId, players, onClose, onSuccess }
   const [playerScores, setPlayerScores] = useState<PlayerScore[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Always create unfinished rounds for new rounds (only edit mode shows score inputs)
+  const createUnfinished = !editRound;
+
+  // Initialize data for edit mode
+  useEffect(() => {
+    if (editRound) {
+      // Find the actual player objects for the round
+      const roundPlayers = editRound.players.map(rp => 
+        players.find(p => p.player_tag === rp.player_tag)
+      ).filter(Boolean) as Player[];
+      
+      setSelectedPlayers(roundPlayers);
+      
+      // Initialize player scores with existing monkey assignments
+      setPlayerScores(editRound.players.map(rp => ({
+        player_tag: rp.player_tag,
+        stage_reached: 0,
+        lives_lost: 0,
+        extra_stages: 0,
+        monkey_used: rp.monkey_used,
+        tiebreaker_points: null
+      })));
+    }
+  }, [editRound, players]);
 
   const loadingMessages = [
     'Initializing Monkey Distribution System...',
@@ -206,20 +245,50 @@ export default function AddRoundForm({ congressId, players, onClose, onSuccess }
     setIsSubmitting(true);
 
     try {
-      const response = await fetch(`/api/congresses/${congressId}/rounds`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+      if (editRound) {
+        // Update existing round
+        const response = await fetch(`/api/congresses/${congressId}/rounds/${editRound.round_id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            players: playerScores
+          }),
+        });
+
+        if (!response.ok) {
+          const data = await response.json();
+          throw new Error(data.error || 'Failed to update round');
+        }
+      } else {
+        // Create new round
+        const roundData = createUnfinished ? {
+          difficulty,
+          players: playerScores.map(score => ({
+            ...score,
+            stage_reached: 0,
+            lives_lost: 0,
+            extra_stages: 0,
+            tiebreaker_points: null
+          }))
+        } : {
           difficulty,
           players: playerScores
-        }),
-      });
+        };
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Failed to create round');
+        const response = await fetch(`/api/congresses/${congressId}/rounds`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(roundData),
+        });
+
+        if (!response.ok) {
+          const data = await response.json();
+          throw new Error(data.error || 'Failed to create round');
+        }
       }
 
       onSuccess();
@@ -236,7 +305,12 @@ export default function AddRoundForm({ congressId, players, onClose, onSuccess }
       <div className="bg-white p-6 rounded-lg max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-bold">
-            {currentStep === 'select-players' ? 'Select Players' : 'Add New Round'}
+            {editRound 
+              ? `Finish Round ${editRound.round_order} - ${editRound.difficulty}`
+              : currentStep === 'select-players' 
+                ? 'Select Players' 
+                : 'Add New Round'
+            }
           </h2>
           <button
             onClick={onClose}
@@ -293,151 +367,188 @@ export default function AddRoundForm({ congressId, players, onClose, onSuccess }
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="flex gap-4 items-center">
-              <div className="flex-1">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Difficulty
-                </label>
-                <select
-                  value={difficulty}
-                  onChange={(e) => setDifficulty(e.target.value as Difficulty)}
-                  className="w-full px-3 py-2 border rounded-md"
+            {editRound ? (
+              <div className="p-4 bg-gray-50 border rounded-lg">
+                <h4 className="font-medium mb-2">Round Configuration</h4>
+                <p className="text-sm text-gray-600">
+                  <strong>Difficulty:</strong> {editRound.difficulty}
+                </p>
+                <p className="text-sm text-gray-600">
+                  <strong>Players:</strong> {selectedPlayers.map(p => p.real_name).join(', ')}
+                </p>
+              </div>
+            ) : (
+              <div className="flex gap-4 items-center">
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Difficulty
+                  </label>
+                  <select
+                    value={difficulty}
+                    onChange={(e) => setDifficulty(e.target.value as Difficulty)}
+                    className="w-full px-3 py-2 border rounded-md"
+                  >
+                    {Object.values(Difficulty).map((d) => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-center gap-2 mt-6">
+                  <input
+                    type="checkbox"
+                    id="isSmb1"
+                    checked={isSmb1}
+                    onChange={(e) => setIsSmb1(e.target.checked)}
+                    className="rounded"
+                  />
+                  <label htmlFor="isSmb1" className="text-sm font-medium text-gray-700">
+                    SMB1 Mode
+                  </label>
+                </div>
+                <button
+                  type="button"
+                  onClick={distributeMonkeys}
+                  className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded mt-5"
                 >
-                  {Object.values(Difficulty).map((d) => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
+                  🍌 MDS 🎲
+                </button>
               </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="isSmb1"
-                  checked={isSmb1}
-                  onChange={(e) => setIsSmb1(e.target.checked)}
-                  className="rounded"
-                />
-                <label htmlFor="isSmb1" className="text-sm font-medium text-gray-700">
-                  SMB1 Mode
-                </label>
-              </div>
-              <button
-                type="button"
-                onClick={distributeMonkeys}
-                className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded"
-              >
-                🍌 MDS 🎲
-              </button>
-            </div>
+            )}
 
-            <div className="space-y-4">
-              {playerScores.map((score, index) => {
-                const player = selectedPlayers.find(p => p.player_tag === score.player_tag)!;
-                return (
-                  <div key={score.player_tag} className="border rounded-lg p-4">
-                    <div className="flex items-center gap-4 mb-4">
-                      <PlayerDisplay player={player} size="sm" />
-                      <div className="flex-1">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Monkey Used
-                        </label>
-                        <select
-                          value={score.monkey_used}
-                          onChange={(e) => {
-                            const newScores = [...playerScores];
-                            newScores[index].monkey_used = Number(e.target.value) as MonkeyType;
-                            setPlayerScores(newScores);
-                          }}
-                          className="w-full px-3 py-2 border rounded-md"
-                        >
-                          {Object.entries(MONKEY_NAMES).map(([value, name]) => (
-                            <option key={value} value={value}>{name}</option>
-                          ))}
-                        </select>
+            {((!createUnfinished && !editRound) || editRound) && (
+              <div className="space-y-4">
+                {playerScores.map((score, index) => {
+                  const player = selectedPlayers.find(p => p.player_tag === score.player_tag)!;
+                  return (
+                    <div key={score.player_tag} className="border rounded-lg p-4">
+                      <div className="flex items-center gap-4 mb-4">
+                        <PlayerDisplay player={player} size="sm" />
+                        <div className="flex-1">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Monkey Used
+                          </label>
+                          <select
+                            value={score.monkey_used}
+                            onChange={(e) => {
+                              const newScores = [...playerScores];
+                              newScores[index].monkey_used = Number(e.target.value) as MonkeyType;
+                              setPlayerScores(newScores);
+                            }}
+                            className="w-full px-3 py-2 border rounded-md"
+                            disabled={editRound !== undefined} // Don't allow changing monkey in edit mode
+                          >
+                            {Object.entries(MONKEY_NAMES).map(([value, name]) => (
+                              <option key={value} value={value}>{name}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Stage Reached (0-{maxStages.main})
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={maxStages.main}
+                            value={score.stage_reached}
+                            onChange={(e) => {
+                              const newScores = [...playerScores];
+                              newScores[index].stage_reached = Math.min(
+                                Math.max(0, parseInt(e.target.value) || 0),
+                                maxStages.main
+                              );
+                              setPlayerScores(newScores);
+                            }}
+                            className="w-full px-3 py-2 border rounded-md"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Lives Lost
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={score.lives_lost}
+                            onChange={(e) => {
+                              const newScores = [...playerScores];
+                              newScores[index].lives_lost = Math.max(0, parseInt(e.target.value) || 0);
+                              setPlayerScores(newScores);
+                            }}
+                            className="w-full px-3 py-2 border rounded-md"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Extra Stages (0-{extraStagesCount})
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={extraStagesCount}
+                            value={score.extra_stages}
+                            onChange={(e) => {
+                              const newScores = [...playerScores];
+                              newScores[index].extra_stages = Math.min(
+                                Math.max(0, parseInt(e.target.value) || 0),
+                                extraStagesCount
+                              );
+                              setPlayerScores(newScores);
+                            }}
+                            className="w-full px-3 py-2 border rounded-md"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Tiebreaker Points
+                          </label>
+                          <input
+                            type="number"
+                            value={score.tiebreaker_points ?? ''}
+                            onChange={(e) => {
+                              const newScores = [...playerScores];
+                              const value = e.target.value === '' ? null : parseInt(e.target.value);
+                              newScores[index].tiebreaker_points = value;
+                              setPlayerScores(newScores);
+                            }}
+                            className="w-full px-3 py-2 border rounded-md"
+                            placeholder="Optional"
+                          />
+                        </div>
                       </div>
                     </div>
+                  );
+                })}
+              </div>
+            )}
 
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Stage Reached (0-{maxStages.main})
-                        </label>
-                        <input
-                          type="number"
-                          min={0}
-                          max={maxStages.main}
-                          value={score.stage_reached}
-                          onChange={(e) => {
-                            const newScores = [...playerScores];
-                            newScores[index].stage_reached = Math.min(
-                              Math.max(0, parseInt(e.target.value) || 0),
-                              maxStages.main
-                            );
-                            setPlayerScores(newScores);
-                          }}
-                          className="w-full px-3 py-2 border rounded-md"
-                        />
+            {!editRound && createUnfinished && (
+              <div className="p-4 bg-gray-50 border rounded-lg">
+                <h4 className="font-medium mb-2">Live Round Setup</h4>
+                <div className="space-y-2">
+                  {selectedPlayers.map((player) => {
+                    const score = playerScores.find(s => s.player_tag === player.player_tag);
+                    return (
+                      <div key={player.player_tag} className="flex items-center gap-4">
+                        <PlayerDisplay player={player} size="sm" />
+                        <span className="text-sm text-gray-600">
+                          → {MONKEY_NAMES[score?.monkey_used || player.monkey_preference]}
+                        </span>
                       </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Lives Lost
-                        </label>
-                        <input
-                          type="number"
-                          min={0}
-                          value={score.lives_lost}
-                          onChange={(e) => {
-                            const newScores = [...playerScores];
-                            newScores[index].lives_lost = Math.max(0, parseInt(e.target.value) || 0);
-                            setPlayerScores(newScores);
-                          }}
-                          className="w-full px-3 py-2 border rounded-md"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Extra Stages (0-{extraStagesCount})
-                        </label>
-                        <input
-                          type="number"
-                          min={0}
-                          max={extraStagesCount}
-                          value={score.extra_stages}
-                          onChange={(e) => {
-                            const newScores = [...playerScores];
-                            newScores[index].extra_stages = Math.min(
-                              Math.max(0, parseInt(e.target.value) || 0),
-                              extraStagesCount
-                            );
-                            setPlayerScores(newScores);
-                          }}
-                          className="w-full px-3 py-2 border rounded-md"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Tiebreaker Points
-                        </label>
-                        <input
-                          type="number"
-                          value={score.tiebreaker_points ?? ''}
-                          onChange={(e) => {
-                            const newScores = [...playerScores];
-                            const value = e.target.value === '' ? null : parseInt(e.target.value);
-                            newScores[index].tiebreaker_points = value;
-                            setPlayerScores(newScores);
-                          }}
-                          className="w-full px-3 py-2 border rounded-md"
-                          placeholder="Optional"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                    );
+                  })}
+                </div>
+                <p className="text-sm text-gray-500 mt-2">
+                  This will create a live round that can be finished later by adding scores.
+                </p>
+              </div>
+            )}
 
             {error && (
               <div className="text-red-500 text-sm">{error}</div>
@@ -449,15 +560,22 @@ export default function AddRoundForm({ congressId, players, onClose, onSuccess }
                 disabled={isSubmitting}
                 className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50"
               >
-                {isSubmitting ? 'Adding...' : 'Add Round'}
+                {isSubmitting 
+                  ? 'Creating...' 
+                  : editRound 
+                    ? 'Finish Round' 
+                    : 'Create Live Round'
+                }
               </button>
-              <button
-                type="button"
-                onClick={() => setCurrentStep('select-players')}
-                className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded"
-              >
-                Back to Player Selection
-              </button>
+              {!editRound && (
+                <button
+                  type="button"
+                  onClick={() => setCurrentStep('select-players')}
+                  className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded"
+                >
+                  Back to Player Selection
+                </button>
+              )}
             </div>
           </form>
         )}
@@ -477,11 +595,7 @@ export default function AddRoundForm({ congressId, players, onClose, onSuccess }
 
               {isDistributing ? (
                 <div className="text-center py-8">
-                  <div className="relative mx-auto w-24 h-24 mb-8">
-                    {/* Outer ring with gradient effect */}
-                    <div className="absolute inset-0 rounded-full border-4 border-blue-500/20"></div>
-                    <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-blue-500 animate-spin"></div>
-                  </div>
+                  <LoadingSpinner size="lg" className="mb-8" />
 
                   {/* Animated text */}
                   <div className="h-16">

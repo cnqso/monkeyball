@@ -54,6 +54,23 @@
 	}
 }
 
+@keyframes pulse-fade {
+	0%, 100% {
+		opacity: 1;
+		background-color: rgb(220 252 231);
+		color: rgb(22 101 52);
+	}
+	50% {
+		opacity: 0.6;
+		background-color: rgb(187 247 208);
+		color: rgb(20 83 45);
+	}
+}
+
+.animate-pulse-fade {
+	animation: pulse-fade 2s ease-in-out infinite;
+}
+
 @layer base {
   body {
     font-family: var(--font-jetbrains);

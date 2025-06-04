@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Congress } from '@/types/congress';
+import LoadingSpinner from '@/components/LoadingSpinner';
 
 export default function Home() {
   const [congresses, setCongresses] = useState<Congress[]>([]);
@@ -27,13 +28,17 @@ export default function Home() {
     fetchCongresses();
   }, []);
 
-  if (loading) return <div className="p-4">Loading...</div>;
+  if (loading) return (
+    <div className="p-4">
+      <LoadingSpinner size="lg" className="py-8" />
+    </div>
+  );
   if (error) return <div className="p-4 text-red-500">{error}</div>;
 
   return (
     <div className="container mx-auto p-4">
       <div className="mb-6">
-        <h1 className="text-3xl font-bold mb-4">Super Monkey Ball League</h1>
+        <h1 className="text-6xl font-bold mb-4 font-orelo">smbto</h1>
         <div className="flex gap-4">
           <Link 
             href="/players/new" 
