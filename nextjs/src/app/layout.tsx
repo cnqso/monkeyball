@@ -15,7 +15,7 @@ const orelo = localFont({
 
 export const metadata: Metadata = {
   title: "SMBTO",
-  description: "Super Monkeyball TO Tools",
+  description: "Super Monkey Ball TO Tools",
 };
 
 export default function RootLayout({

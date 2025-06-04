@@ -64,10 +64,10 @@ CREATE TABLE IF NOT EXISTS round_players (
 
 -- Insert test players
 INSERT INTO players (player_tag, real_name, monkey_preference, profile_picture_id) VALUES
-    ('BananaKing', 'John Smith', 1, 1),      -- Prefers AiAi
-    ('SpeedRunner', 'Jane Doe', 2, 2),       -- Prefers MeeMee
-    ('MonkeyMaster', 'Alex Johnson', 3, 3),  -- Prefers Baby
-    ('ApeWarrior', 'Sam Wilson', 4, 4);      -- Prefers GonGon
+    ('Test1', 'John Smith', 1, 1),      -- Prefers AiAi
+    ('Test2', 'Jane Doe', 2, 2),       -- Prefers MeeMee
+    ('Test3', 'Alex Johnson', 3, 3),  -- Prefers Baby
+    ('Test4', 'Sam Wilson', 4, 4);      -- Prefers GonGon
 
 -- Create a test congress
 INSERT INTO congresses (name, date, location, notes) VALUES
@@ -75,7 +75,7 @@ INSERT INTO congresses (name, date, location, notes) VALUES
 
 -- Add all test players to the test congress
 INSERT INTO congress_players (congress_id, player_tag) VALUES
-    (1, 'BananaKing'),
-    (1, 'SpeedRunner'),
-    (1, 'MonkeyMaster'),
-    (1, 'ApeWarrior');
+    (1, 'Test1'),
+    (1, 'Test2'),
+    (1, 'Test3'),
+    (1, 'Test4');
